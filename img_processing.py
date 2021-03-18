@@ -192,10 +192,53 @@ def func_img_cropdown(img_arr, cropdown_info):
     
     
 ######################################################################################
-def func_img_proc(T1C_bet, T2_bet, FLAIR_bet, mask_T1C_bet,
+def func_img_proc(T1C_original, T2_original, FLAIR_original, 
+                  T1C_bet, T2_bet, FLAIR_bet, mask_T1C_bet,
                   T1C_isovoxel, T2_isovoxel, FLAIR_isovoxel, mask_T1C_bet_iso,
-                  T1C_corrected, T2_corrected, FLAIR_corrected):
+                  T1C_corrected, T2_corrected, FLAIR_corrected, T1C_bet_temp):
     
+    ##Skull Stripping
+
+    t1c_isovoxel = func_resample_isovoxel(T1C_original)
+    sitk.WriteImage(t1c_isovoxel, T1C_isovoxel)
+    print("resampling T1C_original - completed")
+    
+    func_register(T2_original, T1C_isovoxel, T2_isovoxel)
+    print("register T2_original to T1C_isovoxel - completed")
+    
+    func_register(FLAIR_original, T1C_isovoxel, FLAIR_isovoxel)
+    print("register FLAIR_original to T1C_isovoxel - completed")
+    
+    bet_t1gd_iso = BET(in_file = T1C_isovoxel,
+                       frac = 0.4,
+                       mask = True,  # brain tissue mask is stored with '_mask' suffix after T1C_bet.
+                       reduce_bias = True,
+                       out_file = T1C_bet_temp)
+    bet_t1gd_iso.run()
+    print("Acquired BET mask...")
+    os.remove('T1C_bet0_temp.nii.gz')
+    
+    brain_mask_file = T1C_bet_temp[:len(T1C_bet_temp)-len('.nii.gz')] + '_mask.nii.gz'
+    
+    ApplyBet_T1C = ApplyMask(in_file = T1C_isovoxel,
+                                  mask_file= brain_mask_file,
+                                  out_file= T1C_bet)
+    ApplyBet_T1C.run()
+    
+    ApplyBet_T2 = ApplyMask(in_file = T2_isovoxel,
+                                  mask_file= brain_mask_file,
+                                  out_file=T2_bet)
+    ApplyBet_T2.run()
+    
+    ApplyBet_FLAIR = ApplyMask(in_file = FLAIR_isovoxel,
+                                  mask_file= brain_mask_file,
+                                  out_file=FLAIR_bet)
+    ApplyBet_FLAIR.run()
+    
+    print("Skull stripping of T1C, T2, FLAIR... - done")
+
+    ### Resampling, REgisgtering BET files
+
     t1c_isovoxel = func_resample_isovoxel(T1C_bet, isseg=False)
     sitk.WriteImage(t1c_isovoxel, T1C_isovoxel)
     
@@ -209,7 +252,9 @@ def func_img_proc(T1C_bet, T2_bet, FLAIR_bet, mask_T1C_bet,
     
     func_register(FLAIR_bet, T1C_isovoxel, FLAIR_isovoxel)
     print("register FLAIR to T1C_isovoxel - completed")
-   
+    
+    ### Corrections
+
     func_n4bias(T1C_isovoxel, T1C_corrected)
     print("T1C bias correction done...")
     func_n4bias(T2_isovoxel, T2_corrected)
@@ -253,7 +298,7 @@ def func_get_predmask(t1c_arr, flair_arr):
     print("Calling pretrained Model 1...")
     model_unet = UNet_n_base(in_channels=2, class_number=2, n_base_filter=21)  
     model_filename = 'MODEL1_UNet_segmentation.pth'
-    checkpoint = torch.load(model_filename)
+    checkpoint = torch.load(model_filename, map_location={'cuda:1':'cuda:0'})
     model_unet.load_state_dict(checkpoint['model_state_dict'])
     model_unet.eval()
     model_unet.cuda()
@@ -419,8 +464,8 @@ import subprocess
 
 def func_loci(path_T1C_isovoxel, path_mask_isovoxel):
     
-    #print("Registering tumor mask to MNI space...")
-    #func_regi2mni(path_T1C_isovoxel, path_mask_isovoxel)
+    print("Registering tumor mask to MNI space...")
+    func_regi2mni(path_T1C_isovoxel, path_mask_isovoxel)
     
     loci_frame = pd.DataFrame(columns=["mni_Caudate", "mni_Cerebellum", "mni_Frontal Lobe",
                                        "mni_Insula",  "mni_Occipital Lobe", "mni_Parietal Lobe",
@@ -488,7 +533,7 @@ def get_IDH_pred(t1c_resnet_arr, t2_resnet_arr, mask_arr, sla_arr):
     model_pre = ResNet(3, BasicBlock, [3,4,6,3])  
     model = ResNet_transfer(model_pre, 2, 20)
     model_filename = 'MODEL2_CNNclassifier.pth'
-    checkpoint = torch.load(model_filename)
+    checkpoint = torch.load(model_filename, map_location={'cuda:1':'cuda:0'})
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
     model.cuda()
@@ -507,7 +552,7 @@ def get_IDH_pred(t1c_resnet_arr, t2_resnet_arr, mask_arr, sla_arr):
     output = nn.Softmax(dim=1)(output)
     
     output_mean = torch.sum(output[:,1])/5
-    print("IDH mutation probability: %s" %(output_mean.cpu().item()*100)
+    print("IDH mutation probability: %s" %(output_mean.cpu().item()*100))
     
     return output_mean
     
