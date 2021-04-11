@@ -1,6 +1,10 @@
 # automated_hybrid_IDH  
 
-This code tests one sample at a time using Jupyter-Notebook  
+This code tests one sample at a time using Jupyter-Notebook. 
+If you want to test multiple cases at once (from DICOM to IDH status) check my [IDHpredict](https://github.com/ihrapsa/IDHpredict) repo  
+**Note!**
+* This fork also includes the skullstripping part.
+* You need to convert DICOM files to NIFTI format before feeding the input to the pipeline. I used [MRIcroGL](https://github.com/rordenlab/MRIcroGL12) that is a DICOM/NIFTI viewer as well as convertor based on [dcm2niix](https://github.com/rordenlab/MRIcroGL12)
 ____________________________________
 ![alt_text](/workflow.png)
 ___________________________________
